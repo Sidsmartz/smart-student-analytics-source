@@ -1,12 +1,21 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Lightbulb, CalendarDays, Briefcase, Sparkles } from "lucide-react";
+import { Lightbulb, CalendarDays, Briefcase, Sparkles, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useStudents } from "@/context/StudentContext";
 import { getEventRecommendations, getJobRecommendations } from "@/lib/analytics";
 
 const RecommendationsPage = () => {
   const { students } = useStudents();
+  const [query, setQuery] = useState("");
+
+  const filtered = students.filter(
+    (s) =>
+      s.name.toLowerCase().includes(query.toLowerCase()) ||
+      s.skills.some((sk) => sk.toLowerCase().includes(query.toLowerCase()))
+  );
 
   if (students.length === 0) {
     return (
@@ -24,10 +33,24 @@ const RecommendationsPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="mb-2 text-3xl font-bold tracking-tight">Recommendations</h1>
-      <p className="mb-8 text-muted-foreground">Personalized event and career suggestions based on each student's skills.</p>
+      <p className="mb-4 text-muted-foreground">Personalized event and career suggestions based on each student's skills.</p>
+
+      <div className="relative mb-6 max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or skill..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="text-muted-foreground">No students match "{query}".</p>
+      )}
 
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {students.map((student, i) => {
+        {filtered.map((student, i) => {
           const events = getEventRecommendations(student);
           const jobs = getJobRecommendations(student);
 

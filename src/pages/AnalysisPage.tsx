@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, TrendingDown, Award, AlertTriangle, BarChart3 } from "lucide-react";
+import { Users, TrendingDown, Award, AlertTriangle, BarChart3, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useStudents } from "@/context/StudentContext";
 import { analyzeStudents } from "@/lib/analytics";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
@@ -19,6 +20,12 @@ const CHART_COLORS = [
 const AnalysisPage = () => {
   const { students } = useStudents();
   const analysis = useMemo(() => analyzeStudents(students), [students]);
+  const [query, setQuery] = useState("");
+
+  const matchesQuery = (name: string) => name.toLowerCase().includes(query.toLowerCase());
+
+  const filteredTopPerformers = analysis.topPerformers.filter((s) => matchesQuery(s.name));
+  const filteredWeakStudents = analysis.weakStudents.filter((s) => matchesQuery(s.name));
 
   if (students.length === 0) {
     return (
@@ -55,7 +62,17 @@ const AnalysisPage = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="mb-6 text-3xl font-bold tracking-tight">Student Analysis Dashboard</h1>
+      <h1 className="mb-4 text-3xl font-bold tracking-tight">Student Analysis Dashboard</h1>
+
+      <div className="relative mb-6 max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search students by name..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
       {/* Stats */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -132,7 +149,7 @@ const AnalysisPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {analysis.topPerformers.map((s, i) => (
+                {filteredTopPerformers.map((s, i) => (
                   <tr key={i} className="border-b last:border-0">
                     <td className="py-3 font-bold text-primary">#{i + 1}</td>
                     <td className="py-3 font-medium">{s.name}</td>
@@ -173,7 +190,7 @@ const AnalysisPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {analysis.weakStudents.map((s, i) => (
+                  {filteredWeakStudents.map((s, i) => (
                     <tr key={i} className="border-b last:border-0">
                       <td className="py-3 font-medium">{s.name}</td>
                       <td className={`py-3 ${s.marks < 50 ? "font-semibold text-destructive" : ""}`}>{s.marks}</td>
