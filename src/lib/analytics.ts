@@ -1,24 +1,23 @@
 import { Student, AnalysisResult } from "@/types/student";
 
 export function analyzeStudents(students: Student[]): AnalysisResult {
-  // Ensure marks and attendance are numeric
   const sanitized = students.map((s) => ({
     ...s,
-    marks: Number(s.marks) || 0,
+    mid1: Number(s.mid1) || 0,
+    mid2: Number(s.mid2) || 0,
     attendance: Number(s.attendance) || 0,
   }));
 
   const weakStudents = sanitized.filter(
-    (s) => s.marks < 50 || s.attendance < 75
+    (s) => (s.mid1 + s.mid2) / 2 < 50 || s.attendance < 75
   );
 
-  const averageMarks =
-    sanitized.reduce((sum, s) => sum + s.marks, 0) / (sanitized.length || 1);
-  const averageAttendance =
-    sanitized.reduce((sum, s) => sum + s.attendance, 0) / (sanitized.length || 1);
+  const averageMid1 = sanitized.reduce((sum, s) => sum + s.mid1, 0) / (sanitized.length || 1);
+  const averageMid2 = sanitized.reduce((sum, s) => sum + s.mid2, 0) / (sanitized.length || 1);
+  const averageAttendance = sanitized.reduce((sum, s) => sum + s.attendance, 0) / (sanitized.length || 1);
 
   const topPerformers = [...sanitized]
-    .sort((a, b) => b.marks - a.marks)
+    .sort((a, b) => (b.mid1 + b.mid2) - (a.mid1 + a.mid2))
     .slice(0, 5);
 
   const skillDistribution: Record<string, number> = {};
@@ -31,7 +30,8 @@ export function analyzeStudents(students: Student[]): AnalysisResult {
   return {
     totalStudents: sanitized.length,
     weakStudents,
-    averageMarks,
+    averageMid1,
+    averageMid2,
     averageAttendance,
     topPerformers,
     skillDistribution,

@@ -3,24 +3,28 @@ import { useNavigate } from "react-router-dom";
 import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useStudents } from "@/context/StudentContext";
 import { parseCSV } from "@/lib/csvParser";
 import { useToast } from "@/hooks/use-toast";
+import { StudentClass } from "@/types/student";
 
-const SAMPLE_CSV = `Name,Marks,Attendance,Skills,Events,Resume
-Alice Johnson,85,92,Python;React;ML,Hackathon;Workshop,Experienced in web development and machine learning
-Bob Smith,42,68,Java;SQL,Code Sprint,Java developer with database skills
-Carol Williams,73,88,JavaScript;CSS;HTML,Frontend Fest;Design Sprint,Frontend developer with design skills
-David Brown,91,95,Python;Data Science;ML,Kaggle;AI Bootcamp,Data scientist with strong analytics background
-Eve Davis,38,55,Communication;Leadership,,Strong communication and team management skills
-Frank Miller,67,78,C++;Java;Cloud,Hackathon,Systems programmer with cloud experience
-Grace Lee,55,82,React;JavaScript;Design,UI Hackathon;Web Dev,Creative frontend developer
-Henry Wilson,48,71,Python;SQL,Workshop,Backend developer learning data science
-Ivy Taylor,79,90,ML;Python;Cloud,AI Bootcamp;Cloud Workshop,ML engineer with cloud deployment skills
-Jack Anderson,34,60,HTML;CSS,,Web design enthusiast`;
+const CLASSES: StudentClass[] = ["CSD-A", "CSD-B", "CSD-C", "CSD-D"];
+
+const SAMPLE_CSV = `Name,Mid1,Mid2,Attendance,Skills,Events,Resume
+Alice Johnson,82,88,92,Python;React;ML,Hackathon;Workshop,Experienced in web development and machine learning
+Bob Smith,40,45,68,Java;SQL,Code Sprint,Java developer with database skills
+Carol Williams,70,76,88,JavaScript;CSS;HTML,Frontend Fest;Design Sprint,Frontend developer with design skills
+David Brown,89,93,95,Python;Data Science;ML,Kaggle;AI Bootcamp,Data scientist with strong analytics background
+Eve Davis,35,42,55,Communication;Leadership,,Strong communication and team management skills
+Frank Miller,65,70,78,C++;Java;Cloud,Hackathon,Systems programmer with cloud experience
+Grace Lee,52,58,82,React;JavaScript;Design,UI Hackathon;Web Dev,Creative frontend developer
+Henry Wilson,45,50,71,Python;SQL,Workshop,Backend developer learning data science
+Ivy Taylor,76,82,90,ML;Python;Cloud,AI Bootcamp;Cloud Workshop,ML engineer with cloud deployment skills
+Jack Anderson,30,38,60,HTML;CSS,,Web design enthusiast`;
 
 const UploadPage = () => {
-  const { students, setStudents } = useStudents();
+  const { students, setStudents, assignClass } = useStudents();
   const [dragging, setDragging] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -63,7 +67,10 @@ const UploadPage = () => {
   };
 
   const loadSample = () => {
-    const parsed = parseCSV(SAMPLE_CSV);
+    const parsed = parseCSV(SAMPLE_CSV).map((s) => ({
+      ...s,
+      class: CLASSES[Math.floor(Math.random() * CLASSES.length)],
+    }));
     setStudents(parsed);
     toast({ title: "Sample loaded!", description: `Loaded ${parsed.length} sample students.` });
   };
@@ -84,7 +91,7 @@ const UploadPage = () => {
             CSV File Upload
           </CardTitle>
           <CardDescription>
-            Expected columns: Name, Marks, Attendance, Skills (semicolon-separated), Events, Resume
+            Expected columns: Name, Mid1, Mid2, Attendance, Skills (semicolon-separated), Events, Resume
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -118,15 +125,53 @@ const UploadPage = () => {
           </Button>
 
           {students.length > 0 && (
-            <div className="flex items-center justify-between rounded-lg bg-success/10 p-4">
-              <div className="flex items-center gap-2 text-success">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="text-sm font-medium">{students.length} students loaded successfully</span>
+            <>
+              <div className="flex items-center justify-between rounded-lg bg-success/10 p-4">
+                <div className="flex items-center gap-2 text-success">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="text-sm font-medium">{students.length} students loaded successfully</span>
+                </div>
+                <Button onClick={() => navigate("/analysis")}>
+                  View Analysis →
+                </Button>
               </div>
-              <Button onClick={() => navigate("/analysis")}>
-                View Analysis →
-              </Button>
-            </div>
+
+              <div>
+                <p className="mb-2 text-sm font-medium text-muted-foreground">Assign students to a class</p>
+                <div className="max-h-64 overflow-y-auto rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">Student</th>
+                        <th className="px-4 py-2 text-left font-medium">Class</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.map((s) => (
+                        <tr key={s.name} className="border-t">
+                          <td className="px-4 py-2">{s.name}</td>
+                          <td className="px-4 py-2">
+                            <Select
+                              value={s.class || ""}
+                              onValueChange={(val) => assignClass(s.name, val as StudentClass)}
+                            >
+                              <SelectTrigger className="h-8 w-36">
+                                <SelectValue placeholder="Select class" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CLASSES.map((c) => (
+                                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
 
           {students.length === 0 && (
