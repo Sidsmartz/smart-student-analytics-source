@@ -1,30 +1,32 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Lightbulb, CalendarDays, Briefcase, Sparkles, Search } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Lightbulb, Loader2 } from "lucide-react";
 import { useStudents } from "@/context/StudentContext";
-import { getEventRecommendations, getJobRecommendations } from "@/lib/analytics";
+import { Student, SUBJECT_KEYS, SUBJECT_LABELS, SubjectKey } from "@/types/student";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const RecommendationsPage = () => {
-  const { students } = useStudents();
-  const [query, setQuery] = useState("");
+function totalMarks(s: Student) {
+  return SUBJECT_KEYS.reduce((sum, key) => sum + (s[key as SubjectKey].tot || 0), 0);
+}
 
-  const filtered = students.filter(
-    (s) =>
-      s.name.toLowerCase().includes(query.toLowerCase()) ||
-      s.skills.some((sk) => sk.toLowerCase().includes(query.toLowerCase()))
-  );
+export default function RecommendationsPage() {
+  const { students, loading } = useStudents();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (students.length === 0) {
     return (
       <div className="container mx-auto flex flex-col items-center justify-center px-4 py-24">
         <Lightbulb className="mb-4 h-12 w-12 text-muted-foreground" />
         <h2 className="mb-2 text-xl font-semibold">No Data Available</h2>
-        <p className="mb-4 text-muted-foreground">Upload student data first to see recommendations.</p>
+        <p className="mb-4 text-muted-foreground">Add students first to see recommendations.</p>
         <Link to="/" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-          Go to Upload
+          Go to Students
         </Link>
       </div>
     );
@@ -32,72 +34,42 @@ const RecommendationsPage = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="mb-2 text-3xl font-bold tracking-tight">Recommendations</h1>
-      <p className="mb-4 text-muted-foreground">Personalized event and career suggestions based on each student's skills.</p>
+      <h1 className="mb-2 text-2xl font-bold tracking-tight">Recommendations</h1>
+      <p className="mb-6 text-muted-foreground text-sm">Subject-wise performance and improvement suggestions.</p>
 
-      <div className="relative mb-6 max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by name or skill..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {filtered.length === 0 && (
-        <p className="text-muted-foreground">No students match "{query}".</p>
-      )}
-
-      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((student, i) => {
-          const events = getEventRecommendations(student);
-          const jobs = getJobRecommendations(student);
-
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {students.map((s) => {
+          const total = totalMarks(s);
+          const weakSubjects = SUBJECT_KEYS.filter((k) => s[k as SubjectKey].tot < 50);
           return (
-            <Card key={i} className="shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-elevated)]">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between">
-                  <span className="text-base">{student.name}</span>
-                  <Badge variant={student.marks >= 50 && student.attendance >= 75 ? "secondary" : "destructive"} className="text-xs">
-                    {student.marks}% | {student.attendance}%
-                  </Badge>
+            <Card key={s._id}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>{s.htno}</span>
+                  <span className={`text-sm font-normal ${total < 300 ? "text-destructive" : "text-success"}`}>
+                    Total: {total}
+                  </span>
                 </CardTitle>
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {student.skills.map((s) => (
-                    <Badge key={s} variant="outline" className="text-xs font-normal">{s}</Badge>
-                  ))}
-                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-accent">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    Recommended Events
+              <CardContent className="space-y-2 text-sm">
+                {SUBJECT_KEYS.map((k) => {
+                  const sub = s[k as SubjectKey];
+                  return (
+                    <div key={k} className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground truncate max-w-[160px]">
+                        {SUBJECT_LABELS[k as SubjectKey].split(" ").slice(0, 3).join(" ")}
+                      </span>
+                      <span className={`font-medium text-xs ${sub.tot < 50 ? "text-destructive" : ""}`}>
+                        {sub.tot}
+                      </span>
+                    </div>
+                  );
+                })}
+                {weakSubjects.length > 0 && (
+                  <div className="mt-2 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                    Needs improvement: {weakSubjects.map((k) => SUBJECT_LABELS[k as SubjectKey].split(" ")[0]).join(", ")}
                   </div>
-                  <ul className="space-y-1">
-                    {events.map((e) => (
-                      <li key={e} className="flex items-center gap-2 text-sm">
-                        <Sparkles className="h-3 w-3 text-primary" />
-                        {e}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
-                    <Briefcase className="h-3.5 w-3.5" />
-                    Job / Internship Suggestions
-                  </div>
-                  <ul className="space-y-1">
-                    {jobs.map((j) => (
-                      <li key={j} className="flex items-center gap-2 text-sm">
-                        <Sparkles className="h-3 w-3 text-accent" />
-                        {j}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -105,6 +77,4 @@ const RecommendationsPage = () => {
       </div>
     </div>
   );
-};
-
-export default RecommendationsPage;
+}
