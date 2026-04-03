@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, BarChart3, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, BarChart3, Loader2, Upload, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStudents } from "@/context/StudentContext";
 import { useToast } from "@/hooks/use-toast";
 import { Student, SUBJECT_KEYS, SUBJECT_LABELS, SubjectKey } from "@/types/student";
 import StudentForm from "@/components/StudentForm";
+import { parseExcel } from "@/lib/excelParser";
+import { createStudent } from "@/lib/api";
 
 export default function UploadPage() {
-  const { students, loading, error, removeStudent } = useStudents();
+  const { students, loading, error, reload, removeStudent } = useStudents();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | undefined>();
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const openAdd = () => { setEditing(undefined); setFormOpen(true); };
   const openEdit = (s: Student) => { setEditing(s); setFormOpen(true); };
@@ -26,6 +30,54 @@ export default function UploadPage() {
       toast({ title: "Error deleting", variant: "destructive" });
     }
   };
+
+  const processExcel = useCallback(async (file: File) => {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+      toast({ title: "Invalid file", description: "Please upload an .xlsx or .xls file.", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsed = parseExcel(buffer);
+      if (parsed.length === 0) {
+        toast({ title: "No data found", description: "Check the file format.", variant: "destructive" });
+        return;
+      }
+      let added = 0;
+      let skipped = 0;
+      for (const s of parsed) {
+        try {
+          await createStudent(s);
+          added++;
+        } catch {
+          skipped++; // likely duplicate HTNO
+        }
+      }
+      await reload();
+      toast({
+        title: `Imported ${added} students`,
+        description: skipped > 0 ? `${skipped} skipped (duplicate HTNO)` : undefined,
+      });
+    } catch (e: unknown) {
+      toast({ title: "Parse error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }, [toast, reload]);
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processExcel(file);
+    e.target.value = "";
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processExcel(file);
+  }, [processExcel]);
 
   const nextSlNo = students.length > 0 ? Math.max(...students.map((s) => s.slNo)) + 1 : 1;
 
@@ -42,7 +94,9 @@ export default function UploadPage() {
       <div className="container mx-auto px-4 py-12 text-center">
         <p className="text-destructive mb-2 font-medium">Could not connect to server</p>
         <p className="text-sm text-muted-foreground">{error}</p>
-        <p className="mt-4 text-xs text-muted-foreground">Make sure the backend is running: <code>node server/index.js</code></p>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Make sure the backend is running: <code>npm run server</code>
+        </p>
       </div>
     );
   }
@@ -66,9 +120,51 @@ export default function UploadPage() {
         </div>
       </div>
 
+      {/* Excel upload zone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        className={`mb-6 flex items-center justify-center gap-4 rounded-xl border-2 border-dashed p-6 transition-colors ${
+          dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+        }`}
+      >
+        {uploading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : (
+          <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+        )}
+        <div className="text-sm">
+          <span className="text-muted-foreground">
+            {uploading ? "Importing..." : "Drag & drop CSD-2.xlsx here, or "}
+          </span>
+          {!uploading && (
+            <>
+              <label htmlFor="excel-upload" className="cursor-pointer text-primary underline underline-offset-2">
+                browse
+              </label>
+              <input
+                id="excel-upload"
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleFileInput}
+              />
+            </>
+          )}
+        </div>
+        {!uploading && (
+          <label htmlFor="excel-upload">
+            <Button variant="outline" size="sm" asChild>
+              <span><Upload className="mr-1.5 h-3.5 w-3.5" /> Upload Excel</span>
+            </Button>
+          </label>
+        )}
+      </div>
+
       {students.length === 0 ? (
         <div className="rounded-xl border border-dashed p-16 text-center">
-          <p className="text-muted-foreground mb-4">No students yet. Add the first one.</p>
+          <p className="text-muted-foreground mb-4">No students yet. Upload the Excel file or add manually.</p>
           <Button onClick={openAdd}><Plus className="mr-2 h-4 w-4" /> Add Student</Button>
         </div>
       ) : (
