@@ -1,88 +1,185 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, Award, AlertTriangle, BarChart3, Search, Loader2 } from "lucide-react";
+import { Users, Award, AlertTriangle, BarChart3, Search, Loader2, TrendingUp, TrendingDown, BookOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useStudents } from "@/context/StudentContext";
 import { Student, SUBJECT_KEYS, SUBJECT_LABELS, SubjectKey } from "@/types/student";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  ScatterChart, Scatter, ZAxis,
+  PieChart, Pie, Cell,
 } from "recharts";
 
-function totalMarks(s: Student) {
-  return SUBJECT_KEYS.reduce((sum, key) => sum + (s[key as SubjectKey].tot || 0), 0);
-}
+// Short labels for charts
+const SHORT: Record<SubjectKey, string> = {
+  computerOrientedStatisticalMethods: "COSM",
+  businessEconomicsAndFinancialAnalysis: "BEFA",
+  dataAnalyticsUsingR: "DAR",
+  objectOrientedProgrammingThroughJava: "OOPJ",
+  designAndAnalysisOfAlgorithms: "DAA",
+  dataAnalyticsUsingRLab: "DAR Lab",
+  objectOrientedProgrammingThroughJavaLab: "OOPJ Lab",
+  realTimeResearchProject: "RTRP",
+};
 
+const COLORS = [
+  "hsl(220,70%,50%)", "hsl(160,60%,45%)", "hsl(38,92%,50%)",
+  "hsl(0,72%,55%)",   "hsl(280,60%,55%)", "hsl(200,70%,50%)",
+  "hsl(340,70%,55%)", "hsl(100,55%,45%)",
+];
+
+const MAX_TOT = 35; // each subject TOT is out of 35
+
+function totalMarks(s: Student) {
+  return SUBJECT_KEYS.reduce((sum, k) => sum + (s[k as SubjectKey].tot || 0), 0);
+}
 function avgTot(s: Student) {
   return totalMarks(s) / SUBJECT_KEYS.length;
+}
+function pct(val: number, max = MAX_TOT) {
+  return +((val / max) * 100).toFixed(1);
+}
+
+// Grade based on /35
+function grade(tot: number) {
+  const p = pct(tot);
+  if (p >= 90) return { label: "O",  color: "text-emerald-600" };
+  if (p >= 80) return { label: "A+", color: "text-green-600" };
+  if (p >= 70) return { label: "A",  color: "text-blue-600" };
+  if (p >= 60) return { label: "B+", color: "text-sky-600" };
+  if (p >= 50) return { label: "B",  color: "text-yellow-600" };
+  return           { label: "F",  color: "text-red-600" };
 }
 
 export default function AnalysisPage() {
   const { students, loading } = useStudents();
   const [query, setQuery] = useState("");
+  const [selectedHtno, setSelectedHtno] = useState<string>("");
 
   const filtered = useMemo(
     () => students.filter((s) => s.htno.toLowerCase().includes(query.toLowerCase())),
     [students, query]
   );
-
   const sorted = useMemo(() => [...filtered].sort((a, b) => totalMarks(b) - totalMarks(a)), [filtered]);
 
-  const subjectAverages = useMemo(
-    () =>
-      SUBJECT_KEYS.map((key) => ({
-        name: SUBJECT_LABELS[key as SubjectKey].split(" ").slice(0, 3).join(" "),
-        "Avg TOT": students.length
-          ? +(students.reduce((s, st) => s + st[key as SubjectKey].tot, 0) / students.length).toFixed(1)
-          : 0,
-      })),
-    [students]
+  // ── Derived metrics ──────────────────────────────────────────────
+  const metrics = useMemo(() => {
+    if (!students.length) return null;
+    const n = students.length;
+    const totals = students.map(totalMarks);
+    const avgTotal = totals.reduce((a, b) => a + b, 0) / n;
+    const maxTotal = Math.max(...totals);
+    const minTotal = Math.min(...totals);
+    const passCount = students.filter((s) => avgTot(s) >= MAX_TOT * 0.4).length; // 40% pass
+    const weakCount = students.filter((s) => avgTot(s) < MAX_TOT * 0.5).length;
+
+    // Subject averages
+    const subjectAvg = SUBJECT_KEYS.map((k) => ({
+      key: k,
+      short: SHORT[k as SubjectKey],
+      label: SUBJECT_LABELS[k as SubjectKey],
+      avgTot: +(students.reduce((s, st) => s + st[k as SubjectKey].tot, 0) / n).toFixed(2),
+      avgAssign: +(students.reduce((s, st) => s + st[k as SubjectKey].assignment, 0) / n).toFixed(2),
+      avgDesc: +(students.reduce((s, st) => s + st[k as SubjectKey].descriptive, 0) / n).toFixed(2),
+    }));
+
+    // Grade distribution across all subjects
+    const gradeDist: Record<string, number> = { O: 0, "A+": 0, A: 0, "B+": 0, B: 0, F: 0 };
+    students.forEach((s) =>
+      SUBJECT_KEYS.forEach((k) => {
+        gradeDist[grade(s[k as SubjectKey].tot).label]++;
+      })
+    );
+
+    // TOT score buckets (out of 35)
+    const buckets = [
+      { range: "0–7",   count: 0 },
+      { range: "8–14",  count: 0 },
+      { range: "15–21", count: 0 },
+      { range: "22–28", count: 0 },
+      { range: "29–35", count: 0 },
+    ];
+    students.forEach((s) =>
+      SUBJECT_KEYS.forEach((k) => {
+        const t = s[k as SubjectKey].tot;
+        if (t <= 7)       buckets[0].count++;
+        else if (t <= 14) buckets[1].count++;
+        else if (t <= 21) buckets[2].count++;
+        else if (t <= 28) buckets[3].count++;
+        else              buckets[4].count++;
+      })
+    );
+
+    // Assignment vs Descriptive scatter data
+    const scatterData = students.map((s) => ({
+      htno: s.htno,
+      assign: +(SUBJECT_KEYS.reduce((a, k) => a + s[k as SubjectKey].assignment, 0) / SUBJECT_KEYS.length).toFixed(1),
+      desc:   +(SUBJECT_KEYS.reduce((a, k) => a + s[k as SubjectKey].descriptive, 0) / SUBJECT_KEYS.length).toFixed(1),
+      total:  totalMarks(s),
+    }));
+
+    // Top / bottom 5
+    const top5    = [...students].sort((a, b) => totalMarks(b) - totalMarks(a)).slice(0, 5);
+    const bottom5 = [...students].sort((a, b) => totalMarks(a) - totalMarks(b)).slice(0, 5);
+
+    return { n, avgTotal, maxTotal, minTotal, passCount, weakCount, subjectAvg, gradeDist, buckets, scatterData, top5, bottom5 };
+  }, [students]);
+
+  // Per-student radar data
+  const selectedStudent = useMemo(
+    () => students.find((s) => s.htno === selectedHtno),
+    [students, selectedHtno]
+  );
+  const radarData = useMemo(() => {
+    if (!selectedStudent) return [];
+    return SUBJECT_KEYS.map((k) => ({
+      subject: SHORT[k as SubjectKey],
+      score: selectedStudent[k as SubjectKey].tot,
+      fullMark: MAX_TOT,
+    }));
+  }, [selectedStudent]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (!students.length) return (
+    <div className="container mx-auto flex flex-col items-center justify-center px-4 py-24">
+      <BarChart3 className="mb-4 h-12 w-12 text-muted-foreground" />
+      <h2 className="mb-2 text-xl font-semibold">No Data Available</h2>
+      <p className="mb-4 text-muted-foreground">Add students first to see analysis.</p>
+      <Link to="/" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Go to Students</Link>
+    </div>
+  );
 
-  if (students.length === 0) {
-    return (
-      <div className="container mx-auto flex flex-col items-center justify-center px-4 py-24">
-        <BarChart3 className="mb-4 h-12 w-12 text-muted-foreground" />
-        <h2 className="mb-2 text-xl font-semibold">No Data Available</h2>
-        <p className="mb-4 text-muted-foreground">Add students first to see analysis.</p>
-        <Link to="/" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-          Go to Students
-        </Link>
-      </div>
-    );
-  }
-
-  const avgTotal = students.reduce((s, st) => s + totalMarks(st), 0) / students.length;
-  const topPerformers = [...students].sort((a, b) => totalMarks(b) - totalMarks(a)).slice(0, 5);
-  const weakStudents = students.filter((s) => avgTot(s) < 50);
+  const m = metrics!;
+  const maxPossible = SUBJECT_KEYS.length * MAX_TOT;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">Analysis Dashboard</h1>
+    <div className="container mx-auto px-4 py-8 space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight">Analysis Dashboard</h1>
 
-      {/* Stats */}
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      {/* ── KPI Cards ── */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
         {[
-          { label: "Total Students", value: students.length, icon: Users },
-          { label: "Avg Total Marks", value: avgTotal.toFixed(1), icon: BarChart3 },
-          { label: "Top Performers", value: topPerformers.length, icon: Award },
-          { label: "Need Attention", value: weakStudents.length, icon: AlertTriangle },
-        ].map(({ label, value, icon: Icon }) => (
+          { label: "Total Students",   value: m.n,                          icon: Users,        color: "text-blue-600" },
+          { label: "Class Avg",        value: `${m.avgTotal.toFixed(1)}/${maxPossible}`, icon: BarChart3,    color: "text-indigo-600" },
+          { label: "Avg %",            value: `${pct(m.avgTotal, maxPossible)}%`,        icon: TrendingUp,   color: "text-emerald-600" },
+          { label: "Highest Total",    value: `${m.maxTotal}/${maxPossible}`,            icon: Award,        color: "text-green-600" },
+          { label: "Lowest Total",     value: `${m.minTotal}/${maxPossible}`,            icon: TrendingDown, color: "text-orange-500" },
+          { label: "Need Attention",   value: m.weakCount,                  icon: AlertTriangle, color: "text-red-500" },
+        ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label}>
             <CardContent className="flex items-center gap-3 p-4">
               <div className="rounded-lg bg-muted p-2">
-                <Icon className="h-4 w-4 text-primary" />
+                <Icon className={`h-4 w-4 ${color}`} />
               </div>
               <div>
-                <p className="text-xl font-bold">{value}</p>
+                <p className="text-lg font-bold leading-tight">{value}</p>
                 <p className="text-xs text-muted-foreground">{label}</p>
               </div>
             </CardContent>
@@ -90,69 +187,326 @@ export default function AnalysisPage() {
         ))}
       </div>
 
-      {/* Subject averages chart */}
-      <Card className="mb-6">
+      {/* ── Row 1: Subject Avg TOT + Assignment vs Descriptive ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Avg TOT per Subject (out of {MAX_TOT})</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={m.subjectAvg} margin={{ bottom: 10, left: 10, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="short" fontSize={11}
+                  label={{ value: "Subject", position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  domain={[0, MAX_TOT]} fontSize={11}
+                  label={{ value: "Avg TOT (out of 35)", angle: -90, position: "insideLeft", offset: -2, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <Tooltip formatter={(v: number) => [`${v} / ${MAX_TOT}`, "Avg TOT"]} />
+                <Legend verticalAlign="top" formatter={() => "Avg TOT"} />
+                <Bar dataKey="avgTot" name="Avg TOT" radius={[4, 4, 0, 0]}>
+                  {m.subjectAvg.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Avg Assignment vs Descriptive per Subject</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={m.subjectAvg} margin={{ bottom: 10, left: 10, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="short" fontSize={11}
+                  label={{ value: "Subject", position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  fontSize={11}
+                  label={{ value: "Avg Marks", angle: -90, position: "insideLeft", offset: -2, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <Tooltip formatter={(v: number, name: string) => [`${v}`, name]} />
+                <Legend verticalAlign="top" />
+                <Bar dataKey="avgAssign" name="Assignment" fill="hsl(220,70%,50%)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="avgDesc"   name="Descriptive" fill="hsl(160,60%,45%)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Row 2: TOT Score Distribution + Grade Distribution ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">TOT Score Distribution (all subjects, out of 35)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={m.buckets} margin={{ bottom: 10, left: 10, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="range" fontSize={11}
+                  label={{ value: "Score Range (out of 35)", position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  fontSize={11} allowDecimals={false}
+                  label={{ value: "No. of Subject Scores", angle: -90, position: "insideLeft", offset: -2, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <Tooltip formatter={(v: number) => [v, "Subject Scores"]} />
+                <Legend verticalAlign="top" formatter={() => "Subject Score Count"} />
+                <Bar dataKey="count" name="Subject Score Count" fill="hsl(38,92%,50%)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Grade Distribution (all subjects combined)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={Object.entries(m.gradeDist).map(([name, value]) => ({ name, value }))}
+                  dataKey="value" nameKey="name"
+                  cx="50%" cy="45%" outerRadius={85}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={true}
+                >
+                  {Object.keys(m.gradeDist).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: number, name: string) => [v, `Grade ${name}`]} />
+                <Legend
+                  verticalAlign="bottom"
+                  formatter={(value) => `Grade ${value}`}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Row 3: Scatter (Assign vs Desc) + Subject pass rate ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Avg Assignment vs Avg Descriptive per Student</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <ScatterChart margin={{ bottom: 24, left: 16, right: 16, top: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="assign" name="Avg Assignment" fontSize={11} type="number"
+                  label={{ value: "Avg Assignment Score", position: "insideBottom", offset: -12, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  dataKey="desc" name="Avg Descriptive" fontSize={11} type="number"
+                  label={{ value: "Avg Descriptive Score", angle: -90, position: "insideLeft", offset: 8, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <ZAxis dataKey="total" range={[40, 200]} name="Total" />
+                <Tooltip cursor={{ strokeDasharray: "3 3" }} content={({ payload }) => {
+                  if (!payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div className="rounded border bg-background p-2 text-xs shadow">
+                      <p className="font-medium">{d.htno}</p>
+                      <p>Assignment avg: {d.assign}</p>
+                      <p>Descriptive avg: {d.desc}</p>
+                      <p>Total: {d.total}/{maxPossible}</p>
+                    </div>
+                  );
+                }} />
+                <Legend verticalAlign="top" content={() => (
+                  <div className="text-center text-xs text-muted-foreground pb-1">
+                    Each dot = one student · dot size = total marks
+                  </div>
+                )} />
+                <Scatter data={m.scatterData} name="Students" fill="hsl(220,70%,50%)" fillOpacity={0.7} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Subject-wise Pass Rate (≥40% of 35)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart
+                data={SUBJECT_KEYS.map((k) => ({
+                  subject: SHORT[k as SubjectKey],
+                  "Pass %": +(students.filter((s) => pct(s[k as SubjectKey].tot) >= 40).length / students.length * 100).toFixed(1),
+                  "Fail %": +(students.filter((s) => pct(s[k as SubjectKey].tot) < 40).length / students.length * 100).toFixed(1),
+                }))}
+                margin={{ bottom: 10, left: 16, right: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="subject" fontSize={11}
+                  label={{ value: "Subject", position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  domain={[0, 100]} fontSize={11}
+                  tickFormatter={(v) => `${v}%`}
+                  label={{ value: "% of Students", angle: -90, position: "insideLeft", offset: -2, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <Tooltip formatter={(v: number) => [`${v}%`]} />
+                <Legend verticalAlign="top" />
+                <Bar dataKey="Pass %" stackId="a" fill="hsl(160,60%,45%)" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Fail %" stackId="a" fill="hsl(0,72%,55%)"   radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Row 4: Top 5 vs Bottom 5 total marks ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Award className="h-4 w-4 text-emerald-600" /> Top 5 Students</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={m.top5.map((s) => ({ htno: s.htno, Total: totalMarks(s) }))} layout="vertical" margin={{ right: 20, left: 0, top: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  type="number" domain={[0, maxPossible]} fontSize={11}
+                  label={{ value: `Total Marks (out of ${maxPossible})`, position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis type="category" dataKey="htno" fontSize={10} width={95} />
+                <Tooltip formatter={(v: number) => [`${v} / ${maxPossible}`, "Total Marks"]} />
+                <Legend verticalAlign="top" formatter={() => "Total Marks"} />
+                <Bar dataKey="Total" name="Total Marks" fill="hsl(160,60%,45%)" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" /> Bottom 5 Students</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={m.bottom5.map((s) => ({ htno: s.htno, Total: totalMarks(s) }))} layout="vertical" margin={{ right: 20, left: 0, top: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  type="number" domain={[0, maxPossible]} fontSize={11}
+                  label={{ value: `Total Marks (out of ${maxPossible})`, position: "insideBottom", offset: -4, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis type="category" dataKey="htno" fontSize={10} width={95} />
+                <Tooltip formatter={(v: number) => [`${v} / ${maxPossible}`, "Total Marks"]} />
+                <Legend verticalAlign="top" formatter={() => "Total Marks"} />
+                <Bar dataKey="Total" name="Total Marks" fill="hsl(0,72%,55%)" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Per-student Radar ── */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">Average TOT per Subject</CardTitle>
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> Student Subject Radar</span>
+            <select
+              className="rounded border bg-background px-2 py-1 text-xs"
+              value={selectedHtno}
+              onChange={(e) => setSelectedHtno(e.target.value)}
+            >
+              <option value="">Select student...</option>
+              {students.map((s) => <option key={s._id} value={s.htno}>{s.htno}</option>)}
+            </select>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={subjectAverages} margin={{ bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" fontSize={10} angle={-30} textAnchor="end" interval={0} />
-              <YAxis fontSize={12} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="Avg TOT" fill="hsl(220, 70%, 45%)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {selectedStudent ? (
+            <div className="grid gap-6 md:grid-cols-2">
+              <ResponsiveContainer width="100%" height={280}>
+                <RadarChart data={radarData}>
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="subject" fontSize={11} />
+                  <PolarRadiusAxis angle={30} domain={[0, MAX_TOT]} fontSize={9} tickCount={4} tickFormatter={(v) => `${v}`} />
+                  <Radar name={selectedStudent.htno} dataKey="score" stroke="hsl(220,70%,50%)" fill="hsl(220,70%,50%)" fillOpacity={0.35} />
+                  <Tooltip formatter={(v: number) => [`${v} / ${MAX_TOT}`, "TOT Score"]} />
+                  <Legend verticalAlign="bottom" formatter={(value) => `${value} — TOT out of ${MAX_TOT}`} />
+                </RadarChart>
+              </ResponsiveContainer>
+              <div className="space-y-2">
+                {SUBJECT_KEYS.map((k) => {
+                  const sub = selectedStudent[k as SubjectKey];
+                  const g = grade(sub.tot);
+                  const percentage = pct(sub.tot);
+                  return (
+                    <div key={k} className="flex items-center gap-2">
+                      <span className="w-20 text-xs text-muted-foreground shrink-0">{SHORT[k as SubjectKey]}</span>
+                      <div className="flex-1 rounded-full bg-muted h-2 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs w-14 text-right">{sub.tot}/{MAX_TOT}</span>
+                      <span className={`text-xs font-bold w-6 ${g.color}`}>{g.label}</span>
+                    </div>
+                  );
+                })}
+                <div className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                  Total: <span className="font-bold">{totalMarks(selectedStudent)}/{maxPossible}</span>
+                  <span className="ml-2 text-muted-foreground">({pct(totalMarks(selectedStudent), maxPossible)}%)</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">Select a student to view their subject-wise radar.</p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Student table */}
+      {/* ── Full Rankings Table ── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center justify-between">
-            <span>All Students</span>
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span>Full Rankings</span>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search HTNO..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="pl-9 w-48 h-8"
-              />
+              <Input placeholder="Search HTNO..." value={query} onChange={(e) => setQuery(e.target.value)} className="pl-9 w-44 h-8" />
             </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-3 font-medium">Rank</th>
-                  <th className="pb-3 font-medium">HTNO</th>
+                  <th className="pb-2 font-medium">Rank</th>
+                  <th className="pb-2 font-medium">HTNO</th>
                   {SUBJECT_KEYS.map((k) => (
-                    <th key={k} className="pb-3 font-medium text-xs">
-                      {SUBJECT_LABELS[k as SubjectKey].split(" ").slice(0, 2).join(" ")}
-                    </th>
+                    <th key={k} className="pb-2 font-medium text-center">{SHORT[k as SubjectKey]}</th>
                   ))}
-                  <th className="pb-3 font-medium">Total</th>
+                  <th className="pb-2 font-medium text-center">Total</th>
+                  <th className="pb-2 font-medium text-center">%</th>
+                  <th className="pb-2 font-medium text-center">Grade</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((s, i) => (
-                  <tr key={s._id} className="border-b last:border-0">
-                    <td className="py-2 font-bold text-primary">#{i + 1}</td>
-                    <td className="py-2 font-medium">{s.htno}</td>
-                    {SUBJECT_KEYS.map((k) => (
-                      <td key={k} className={`py-2 ${s[k as SubjectKey].tot < 50 ? "text-destructive font-semibold" : ""}`}>
-                        {s[k as SubjectKey].tot}
-                      </td>
-                    ))}
-                    <td className="py-2 font-bold">{totalMarks(s)}</td>
-                  </tr>
-                ))}
+                {sorted.map((s, i) => {
+                  const tot = totalMarks(s);
+                  const percentage = pct(tot, maxPossible);
+                  const g = grade(tot / SUBJECT_KEYS.length);
+                  return (
+                    <tr key={s._id} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="py-2 font-bold text-primary">#{i + 1}</td>
+                      <td className="py-2 font-medium">{s.htno}</td>
+                      {SUBJECT_KEYS.map((k) => {
+                        const t = s[k as SubjectKey].tot;
+                        return (
+                          <td key={k} className={`py-2 text-center ${t < MAX_TOT * 0.4 ? "text-red-600 font-semibold" : ""}`}>
+                            {t}
+                          </td>
+                        );
+                      })}
+                      <td className="py-2 text-center font-bold">{tot}/{maxPossible}</td>
+                      <td className="py-2 text-center">{percentage}%</td>
+                      <td className={`py-2 text-center font-bold ${g.color}`}>{g.label}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
