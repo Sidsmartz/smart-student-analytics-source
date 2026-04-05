@@ -149,7 +149,7 @@ export default function AnalysisPage() {
     </div>
   );
 
-  const m = metrics!;
+  const m = metrics;
   const maxPossible = SUBJECT_KEYS.length * MAX_TOT;
 
   return (
@@ -188,6 +188,10 @@ export default function AnalysisPage() {
           {section ? ` · ${section}` : ""}
         </span>
       </div>
+
+      {!m ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">No students match the current filters.</p>
+      ) : (<>
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
@@ -443,6 +447,7 @@ export default function AnalysisPage() {
           </div>
         </CardContent>
       </Card>
+      </>)}
     </div>
   );
 }
