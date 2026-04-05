@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Student, SubjectKey, SUBJECT_KEYS, SUBJECT_LABELS, emptyStudent } from "@/types/student";
+import { Student, SubjectKey, SUBJECT_KEYS, SUBJECT_LABELS, emptyStudent, SECTIONS, Section } from "@/types/student";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ interface Props {
 }
 
 export default function StudentForm({ open, onClose, existing, nextSlNo = 1 }: Props) {
-  const { addStudent, editStudent, students } = useStudents();
+  const { addStudent, editStudent } = useStudents();
   const { toast } = useToast();
   const [form, setForm] = useState<Student>(existing ?? emptyStudent(nextSlNo));
   const [saving, setSaving] = useState(false);
@@ -63,7 +63,7 @@ export default function StudentForm({ open, onClose, existing, nextSlNo = 1 }: P
 
         <div className="space-y-4">
           {/* Basic info */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>Sl No</Label>
               <Input
@@ -79,6 +79,17 @@ export default function StudentForm({ open, onClose, existing, nextSlNo = 1 }: P
                 onChange={(e) => setForm((p) => ({ ...p, htno: e.target.value.toUpperCase() }))}
                 placeholder="e.g. 22B91A6201"
               />
+            </div>
+            <div>
+              <Label>Section</Label>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.section ?? ""}
+                onChange={(e) => setForm((p) => ({ ...p, section: e.target.value as Section }))}
+              >
+                <option value="">— Select —</option>
+                {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
           </div>
 

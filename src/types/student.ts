@@ -1,3 +1,6 @@
+export type Section = "CSD-A" | "CSD-B" | "CSD-C" | "";
+export const SECTIONS: Section[] = ["CSD-A", "CSD-B", "CSD-C"];
+
 export interface SubjectMarks {
   assignment: number;
   descriptive: number;
@@ -8,6 +11,7 @@ export interface Student {
   _id?: string;
   slNo: number;
   htno: string;
+  section?: Section;
   computerOrientedStatisticalMethods: SubjectMarks;
   businessEconomicsAndFinancialAnalysis: SubjectMarks;
   dataAnalyticsUsingR: SubjectMarks;
@@ -50,6 +54,7 @@ export function emptyStudent(slNo = 1): Student {
   return {
     slNo,
     htno: "",
+    section: "",
     computerOrientedStatisticalMethods: emptySubject(),
     businessEconomicsAndFinancialAnalysis: emptySubject(),
     dataAnalyticsUsingR: emptySubject(),

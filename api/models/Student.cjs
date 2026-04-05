@@ -10,6 +10,7 @@ const studentSchema = new mongoose.Schema(
   {
     slNo: { type: Number, required: true },
     htno: { type: String, required: true, unique: true, uppercase: true, trim: true },
+    section: { type: String, enum: ["CSD-A", "CSD-B", "CSD-C", ""], default: "" },
     computerOrientedStatisticalMethods: subjectSchema,
     businessEconomicsAndFinancialAnalysis: subjectSchema,
     dataAnalyticsUsingR: subjectSchema,
